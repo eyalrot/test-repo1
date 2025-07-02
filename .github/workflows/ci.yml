@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  test:
+    name: Test Node.js Application
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Cache node modules
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run ESLint
+      run: npm run lint
+    
+    - name: Check code formatting
+      run: npm run format -- --check
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Run tests with coverage
+      run: npm run test:coverage
+      if: matrix.node-version == '20'
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+        token: ${{ secrets.CODECOV_TOKEN }}
+      continue-on-error: true
+      if: matrix.node-version == '20'
+    
+    - name: Archive test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-node-${{ matrix.node-version }}
+        path: |
+          coverage/
+          *.log
+        retention-days: 30
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run npm audit
+      run: npm audit --audit-level moderate
+      continue-on-error: true
+    
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: javascript
+    
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      continue-on-error: true
+
+  build:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Verify application starts
+      run: |
+        timeout 10s npm start &
+        sleep 5
+        curl -f http://localhost:3000/health || exit 1
+      continue-on-error: false
+
+  lint:
+    name: Lint and Validate
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install markdownlint
+      run: npm install -g markdownlint-cli
+    
+    - name: Lint markdown files
+      run: markdownlint "**/*.md" --ignore node_modules
+      continue-on-error: true
+    
+    - name: Check for broken links
+      uses: gaurav-nelson/github-action-markdown-link-check@v1
+      with:
+        use-quiet-mode: 'yes'
+        use-verbose-mode: 'yes'
+      continue-on-error: true
+
+  spell-check:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Run spell check
+      uses: streetsidesoftware/cspell-action@v6
+      with:
+        files: "**/*.md"
+        incremental_files_only: false
+      continue-on-error: true
