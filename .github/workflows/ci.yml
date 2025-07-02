@@ -1,0 +1,62 @@
+name: CI
+
+# Trigger the workflow on push and pull request events
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+# Allow manual triggering of the workflow
+  workflow_dispatch:
+
+jobs:
+  # Job for linting and validation
+  lint:
+    name: Lint and Validate
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Checkout the repository code
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    # Setup Node.js for markdown linting
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    # Install markdownlint-cli for markdown validation
+    - name: Install markdownlint
+      run: npm install -g markdownlint-cli
+    
+    # Lint markdown files
+    - name: Lint markdown files
+      run: markdownlint "**/*.md" --ignore node_modules
+      continue-on-error: true
+    
+    # Check for broken links (optional)
+    - name: Check for broken links
+      uses: gaurav-nelson/github-action-markdown-link-check@v1
+      with:
+        use-quiet-mode: 'yes'
+        use-verbose-mode: 'yes'
+      continue-on-error: true
+
+  # Job for spell checking
+  spell-check:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Run spell check
+      uses: streetsidesoftware/cspell-action@v6
+      with:
+        files: "**/*.md"
+        incremental_files_only: false
+      continue-on-error: true
